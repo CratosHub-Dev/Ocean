@@ -1,0 +1,525 @@
+--[[
+    ocean duels - Clean Menu with Scroll & Extended Bottom
+--]]
+
+repeat task.wait() until game:IsLoaded()
+
+do
+    local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local CoreGui = game:GetService("CoreGui")
+    local LP = Players.LocalPlayer
+    local Lighting = game:GetService("Lighting")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    -- ============================================================
+    -- APPLY WHITE CLOUDY SKY WITH RAIN
+    -- ============================================================
+    local rainGui = nil
+    local rainDrops = {}
+    local rainActive = false
+    local rainAnimConn = nil
+
+    local function stopRain()
+        rainActive = false
+        if rainAnimConn then
+            rainAnimConn:Disconnect()
+            rainAnimConn = nil
+        end
+        if rainGui and rainGui.Parent then
+            rainGui:Destroy()
+            rainGui = nil
+        end
+        rainDrops = {}
+    end
+
+    local function startRain()
+        if rainActive then return end
+        rainActive = true
+        
+        rainGui = Instance.new("ScreenGui")
+        rainGui.Name = "RainEffect"
+        rainGui.ResetOnSpawn = false
+        rainGui.IgnoreGuiInset = true
+        rainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        rainGui.Parent = LP:WaitForChild("PlayerGui")
+        
+        local rainContainer = Instance.new("Frame", rainGui)
+        rainContainer.Size = UDim2.new(1, 0, 1, 0)
+        rainContainer.BackgroundTransparency = 1
+        rainContainer.BorderSizePixel = 0
+        
+        rainDrops = {}
+        for i = 1, 200 do
+            local drop = Instance.new("Frame", rainContainer)
+            local width = math.random(1, 2)
+            local height = math.random(8, 18)
+            drop.Size = UDim2.new(0, width, 0, height)
+            drop.Position = UDim2.new(math.random() * 0.95, 0, math.random() * 1.2, 0)
+            drop.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+            drop.BackgroundTransparency = 0.3 + math.random() * 0.3
+            drop.BorderSizePixel = 0
+            drop.Rotation = 10 + math.random() * 10
+            
+            rainDrops[i] = {
+                drop = drop,
+                speed = 1.5 + math.random() * 2.5,
+                length = height,
+                startY = drop.Position.Y.Scale
+            }
+        end
+        
+        if rainAnimConn then rainAnimConn:Disconnect() end
+        rainAnimConn = RunService.Heartbeat:Connect(function()
+            if not rainActive or not rainGui or not rainGui.Parent then
+                if rainAnimConn then rainAnimConn:Disconnect(); rainAnimConn = nil end
+                return
+            end
+            for _, rd in ipairs(rainDrops) do
+                if rd and rd.drop and rd.drop.Parent then
+                    local newY = rd.drop.Position.Y.Scale + (rd.speed * 0.012)
+                    if newY > 1.2 then
+                        newY = -0.2
+                        rd.drop.Position = UDim2.new(math.random() * 0.95, 0, newY, 0)
+                    else
+                        rd.drop.Position = UDim2.new(rd.drop.Position.X.Scale, 0, newY, 0)
+                    end
+                end
+            end
+        end)
+    end
+
+    local function applyCloudySkyWithRain()
+        for _, child in ipairs(Lighting:GetChildren()) do
+            if child:IsA("ColorCorrectionEffect") or child:IsA("Sky") then
+                child:Destroy()
+            end
+        end
+        
+        local sky = Instance.new("Sky")
+        sky.Name = "CloudySky"
+        sky.SkyboxBk = "rbxassetid://18009360"
+        sky.SkyboxDn = "rbxassetid://18009360"
+        sky.SkyboxFt = "rbxassetid://18009360"
+        sky.SkyboxLf = "rbxassetid://18009360"
+        sky.SkyboxRt = "rbxassetid://18009360"
+        sky.SkyboxUp = "rbxassetid://18009360"
+        sky.Parent = Lighting
+        
+        Lighting.Ambient = Color3.fromRGB(200, 200, 210)
+        Lighting.Brightness = 1.2
+        Lighting.FogColor = Color3.fromRGB(220, 220, 230)
+        Lighting.FogEnd = 800
+        Lighting.GlobalShadows = false
+        Lighting.EnvironmentDiffuseScale = 0.8
+        Lighting.EnvironmentSpecularScale = 0.2
+        
+        local cc = Instance.new("ColorCorrectionEffect")
+        cc.Name = "CloudyEffect"
+        cc.TintColor = Color3.fromRGB(230, 230, 245)
+        cc.Saturation = 0.3
+        cc.Contrast = 0.05
+        cc.Brightness = 0.08
+        cc.Parent = Lighting
+        
+        startRain()
+        print("[ocean duels] Cloudy sky with rain applied!")
+    end
+
+    local function removeCloudySky()
+        for _, child in ipairs(Lighting:GetChildren()) do
+            if child:IsA("ColorCorrectionEffect") or child:IsA("Sky") then
+                child:Destroy()
+            end
+        end
+        
+        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
+        Lighting.Brightness = 1
+        Lighting.FogColor = Color3.fromRGB(127, 127, 127)
+        Lighting.FogEnd = 1000
+        Lighting.GlobalShadows = true
+        
+        stopRain()
+        print("[ocean duels] Cloudy sky and rain removed!")
+    end
+
+    applyCloudySkyWithRain()
+
+    -- ============================================================
+    -- OCEAN DUELS PROGRESS BAR (Blue Edition)
+    -- ============================================================
+
+    local progressPct = nil
+    local progressFill = nil
+    local progressRadLbl = nil
+    local progressBarFrame = nil
+    local isStealing = false
+    local stealStartTime = nil
+    local stealDuration = 1.3
+    local stealRadius = 20
+    local progressConnection = nil
+
+    local function createProgressBar()
+        -- Destroy old if exists
+        local oldGui = LP.PlayerGui:FindFirstChild("OceanProgressBar")
+        if oldGui then oldGui:Destroy() end
+        
+        local _pbGui = Instance.new("ScreenGui")
+        _pbGui.Name = "OceanProgressBar"
+        _pbGui.ResetOnSpawn = false
+        _pbGui.DisplayOrder = 20
+        _pbGui.IgnoreGuiInset = true
+        _pbGui.Parent = LP:WaitForChild("PlayerGui")
+        
+        local pbFrame = Instance.new("Frame", _pbGui)
+        pbFrame.Size = UDim2.new(0, 320, 0, 52)
+        pbFrame.Position = UDim2.new(0.5, -160, 1, -68)
+        pbFrame.BackgroundColor3 = Color3.fromRGB(8, 20, 45) -- Deep ocean blue
+        pbFrame.BorderSizePixel = 0
+        pbFrame.Active = true
+        progressBarFrame = pbFrame
+        
+        Instance.new("UICorner", pbFrame).CornerRadius = UDim.new(0, 12)
+        
+        local pbStroke = Instance.new("UIStroke", pbFrame)
+        pbStroke.Color = Color3.fromRGB(0, 180, 255) -- Bright ocean blue border
+        pbStroke.Thickness = 2
+        
+        -- Make draggable
+        local _pbDragging, _pbDragStart, _pbStartPos = false, nil, nil
+        pbFrame.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                _pbDragging = true
+                _pbDragStart = inp.Position
+                _pbStartPos = pbFrame.Position
+                inp.Changed:Connect(function()
+                    if inp.UserInputState == Enum.UserInputState.End then _pbDragging = false end
+                end)
+            end
+        end)
+        
+        UserInputService.InputChanged:Connect(function(inp)
+            if not _pbDragging then return end
+            if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                local delta = inp.Position - _pbDragStart
+                pbFrame.Position = UDim2.new(
+                    _pbStartPos.X.Scale, _pbStartPos.X.Offset + delta.X,
+                    _pbStartPos.Y.Scale, _pbStartPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+        
+        -- Percentage text
+        progressPct = Instance.new("TextLabel", pbFrame)
+        progressPct.Size = UDim2.new(1, -30, 0, 22)
+        progressPct.Position = UDim2.new(0, 15, 0, 8)
+        progressPct.BackgroundTransparency = 1
+        progressPct.Text = ""
+        progressPct.TextColor3 = Color3.fromRGB(100, 220, 255) -- Light ocean blue
+        progressPct.Font = Enum.Font.GothamBold
+        progressPct.TextSize = 18
+        progressPct.TextXAlignment = Enum.TextXAlignment.Left
+        progressPct.ZIndex = 5
+        
+        -- Radius label
+        progressRadLbl = Instance.new("TextLabel", pbFrame)
+        progressRadLbl.Size = UDim2.new(0, 140, 0, 22)
+        progressRadLbl.Position = UDim2.new(1, -155, 0, 8)
+        progressRadLbl.BackgroundTransparency = 1
+        progressRadLbl.Text = "🌊 Radius: " .. stealRadius
+        progressRadLbl.TextColor3 = Color3.fromRGB(100, 220, 255) -- Light ocean blue
+        progressRadLbl.Font = Enum.Font.GothamBold
+        progressRadLbl.TextSize = 15
+        progressRadLbl.TextXAlignment = Enum.TextXAlignment.Right
+        progressRadLbl.ZIndex = 5
+        
+        -- Progress bar background
+        local pbBg = Instance.new("Frame", pbFrame)
+        pbBg.Size = UDim2.new(1, -30, 0, 10)
+        pbBg.Position = UDim2.new(0, 15, 0, 34)
+        pbBg.BackgroundColor3 = Color3.fromRGB(3, 10, 30) -- Very dark ocean
+        pbBg.BorderSizePixel = 0
+        Instance.new("UICorner", pbBg).CornerRadius = UDim.new(0, 6)
+        
+        local bgStroke = Instance.new("UIStroke", pbBg)
+        bgStroke.Color = Color3.fromRGB(0, 180, 255)
+        bgStroke.Thickness = 1
+        
+        -- Progress fill (ocean gradient)
+        progressFill = Instance.new("Frame", pbBg)
+        progressFill.Size = UDim2.new(0, 0, 1, 0)
+        progressFill.BackgroundColor3 = Color3.fromRGB(0, 150, 255) -- Ocean blue
+        progressFill.BorderSizePixel = 0
+        Instance.new("UICorner", progressFill).CornerRadius = UDim.new(0, 6)
+        
+        -- Glow effect
+        local glow = Instance.new("Frame", pbBg)
+        glow.Size = UDim2.new(1, 0, 1, 0)
+        glow.BackgroundColor3 = Color3.fromRGB(50, 200, 255)
+        glow.BackgroundTransparency = 0.7
+        glow.BorderSizePixel = 0
+        glow.ZIndex = 0
+        Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 6)
+        
+        return _pbGui
+    end
+
+    -- ============================================================
+    -- PROGRESS BAR FUNCTIONS
+    -- ============================================================
+
+    local function resetProgressBar()
+        if progressPct then progressPct.Text = "0%" end
+        if progressFill then progressFill.Size = UDim2.new(0, 0, 1, 0) end
+        if progressConnection then
+            progressConnection:Disconnect()
+            progressConnection = nil
+        end
+        isStealing = false
+    end
+
+    local function updateProgressBar(progress)
+        if progressFill then
+            progressFill.Size = UDim2.new(progress, 0, 1, 0)
+            -- Ocean color gradient
+            if progress < 0.3 then
+                progressFill.BackgroundColor3 = Color3.fromRGB(0, 100, 255) -- Deep blue
+            elseif progress < 0.6 then
+                progressFill.BackgroundColor3 = Color3.fromRGB(0, 150, 255) -- Mid blue
+            elseif progress < 0.9 then
+                progressFill.BackgroundColor3 = Color3.fromRGB(0, 200, 255) -- Light blue
+            else
+                progressFill.BackgroundColor3 = Color3.fromRGB(50, 230, 255) -- Cyan
+            end
+        end
+        if progressPct then
+            progressPct.Text = math.floor(progress * 100) .. "%"
+        end
+    end
+
+    local function setRadius(radius)
+        stealRadius = radius
+        if progressRadLbl then
+            progressRadLbl.Text = "🌊 Radius: " .. stealRadius
+        end
+    end
+
+    local function startStealProgress(duration)
+        duration = duration or stealDuration
+        if isStealing then return end
+        
+        isStealing = true
+        stealStartTime = tick()
+        
+        resetProgressBar()
+        
+        progressConnection = RunService.Heartbeat:Connect(function()
+            if not isStealing then
+                progressConnection:Disconnect()
+                progressConnection = nil
+                return
+            end
+            local elapsed = tick() - stealStartTime
+            local progress = math.clamp(elapsed / duration, 0, 1)
+            updateProgressBar(progress)
+            
+            if progress >= 1 then
+                isStealing = false
+                progressConnection:Disconnect()
+                progressConnection = nil
+                -- Wave flash effect
+                if progressFill then
+                    progressFill.BackgroundColor3 = Color3.fromRGB(0, 255, 220)
+                    task.delay(0.1, function()
+                        if progressFill then
+                            progressFill.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+                        end
+                    end)
+                end
+                task.delay(0.2, function()
+                    resetProgressBar()
+                end)
+            end
+        end)
+    end
+
+    -- Create the progress bar
+    createProgressBar()
+
+    -- Store progress functions globally for other scripts to use
+    _G.UpdateProgress = updateProgressBar
+    _G.SetBarState = function(state, distance)
+        if state == "STEALING" then
+            -- Start steal progress if not already running
+            if not isStealing then
+                startStealProgress(stealDuration)
+            end
+        elseif state == "READY" then
+            if distance then
+                if progressRadLbl then
+                    progressRadLbl.Text = "🌊 " .. math.floor(distance) .. "m"
+                end
+            end
+        else -- IDLE
+            resetProgressBar()
+            if progressRadLbl then
+                progressRadLbl.Text = "🌊 Radius: " .. stealRadius
+            end
+        end
+    end
+    _G.SetStealRadius = setRadius
+
+    print("🌊 Ocean Duels Progress Bar loaded!")
+    print("📏 Size: 320x52")
+
+    -- ============================================================
+    -- ESP SYSTEM (Uses BillboardGui for persistent visibility)
+    -- ============================================================
+    
+    local espEnabled = false
+    local espConn = nil
+    local espBoxes = {}
+    local espGui = nil
+    
+    local ESP_COLOR = Color3.fromRGB(0, 150, 255) -- Ocean blue
+    local ESP_MAX_DISTANCE = 150
+    
+    local function createESPBox(targetChar)
+        if not targetChar then return nil end
+        
+        -- Create a ScreenGui for ESP
+        if not espGui or not espGui.Parent then
+            espGui = Instance.new("ScreenGui")
+            espGui.Name = "ESP_Gui"
+            espGui.ResetOnSpawn = false
+            espGui.DisplayOrder = 999
+            espGui.IgnoreGuiInset = true
+            espGui.Parent = LP:WaitForChild("PlayerGui")
+        end
+        
+        local head = targetChar:FindFirstChild("Head")
+        if not head then return nil end
+        
+        -- Create BillboardGui on the player's head
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPBox"
+        billboard.Size = UDim2.new(0, 80, 0, 120)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = ESP_MAX_DISTANCE
+        billboard.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        billboard.Parent = head
+        
+        -- Create the box frame (top to bottom rectangle)
+        local boxFrame = Instance.new("Frame", billboard)
+        boxFrame.Name = "BoxFrame"
+        boxFrame.Size = UDim2.new(1, 0, 1, 0)
+        boxFrame.BackgroundTransparency = 0.7
+        boxFrame.BackgroundColor3 = ESP_COLOR
+        boxFrame.BorderSizePixel = 2
+        boxFrame.BorderColor3 = ESP_COLOR
+        boxFrame.ZIndex = 10
+        boxFrame.ClipsDescendants = false
+        
+        -- Inner glow
+        local glow = Instance.new("Frame", billboard)
+        glow.Name = "Glow"
+        glow.Size = UDim2.new(1, 8, 1, 8)
+        glow.Position = UDim2.new(0, -4, 0, -4)
+        glow.BackgroundTransparency = 0.9
+        glow.BackgroundColor3 = ESP_COLOR
+        glow.BorderSizePixel = 0
+        glow.ZIndex = 9
+        
+        -- Name label at top
+        local nameLabel = Instance.new("TextLabel", billboard)
+        nameLabel.Name = "NameLabel"
+        nameLabel.Size = UDim2.new(1, 0, 0, 20)
+        nameLabel.Position = UDim2.new(0, 0, 0, -22)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = ""
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextSize = 10
+        nameLabel.TextScaled = true
+        nameLabel.ZIndex = 11
+        
+        -- Health bar at bottom
+        local healthBar = Instance.new("Frame", billboard)
+        healthBar.Name = "HealthBar"
+        healthBar.Size = UDim2.new(1, 0, 0, 4)
+        healthBar.Position = UDim2.new(0, 0, 1, 0)
+        healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        healthBar.BackgroundTransparency = 0.3
+        healthBar.BorderSizePixel = 0
+        healthBar.ZIndex = 11
+        
+        local healthFill = Instance.new("Frame", healthBar)
+        healthFill.Name = "HealthFill"
+        healthFill.Size = UDim2.new(1, 0, 1, 0)
+        healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        healthFill.BorderSizePixel = 0
+        
+        return billboard
+    end
+    
+    local function updateESPBox(billboard, targetChar)
+        if not billboard or not billboard.Parent then return end
+        if not targetChar or not targetChar.Parent then 
+            billboard.Visible = false
+            return 
+        end
+        
+        -- Update name
+        local nameLabel = billboard:FindFirstChild("NameLabel")
+        local boxFrame = billboard:FindFirstChild("BoxFrame")
+        local glow = billboard:FindFirstChild("Glow")
+        local healthBar = billboard:FindFirstChild("HealthBar")
+        local healthFill = healthBar and healthBar:FindFirstChild("HealthFill")
+        
+        -- Get player name
+        local player = Players:GetPlayerFromCharacter(targetChar)
+        if player and nameLabel then
+            nameLabel.Text = player.DisplayName or player.Name
+        end
+        
+        -- Update health bar
+        local hum = targetChar:FindFirstChildOfClass("Humanoid")
+        if hum and healthFill then
+            local healthPercent = hum.Health / hum.MaxHealth
+            healthFill.Size = UDim2.new(healthPercent, 0, 1, 0)
+            -- Color based on health
+            if healthPercent > 0.5 then
+                healthFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+            elseif healthPercent > 0.25 then
+                healthFill.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+            else
+                healthFill.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            end
+        end
+        
+        -- Check distance for visibility
+        local myChar = LP.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+        
+        if myRoot and targetRoot then
+            local dist = (targetRoot.Position - myRoot.Position).Magnitude
+            if dist > ESP_MAX_DISTANCE then
+                billboard.Visible = false
+                return
+            else
+                billboard.Visible = true
+                -- Fade based on distance
+                local alpha = 1 - (dist / ESP_MAX_DISTANCE)
+                local transparency = 0.3 + (1 - alpha) * 0.6
+                if boxFrame then
+                    boxFrame.BackgroundTransparency = transparency
+                    boxFrame.BorderSizePixel = 2
+                    boxFrame.BorderColor3 = ESP_COLOR
+                end
+                if glow then
+                    glow.BackgroundTransparency = 0.7 + (1 - alpha) * 0.2
+         
